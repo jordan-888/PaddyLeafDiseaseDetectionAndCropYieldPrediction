@@ -18,52 +18,80 @@ A modular, production-ready machine learning system for predicting crop yields u
 The system follows a modular pipeline architecture with clear separation of concerns:
 
 ```mermaid
-flowchart LR
-    A1["📥 Input<br/>CSV Data"] --> B1["🔄 Data Loader<br/>Load Dataset"]
-    A2["📥 User Input<br/>JSON/Dict"] --> F1["� Prediction API<br/>Validate Input"]
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'14px'}}}%%
+flowchart TD
+    subgraph Input["📥 Input Layer"]
+        A1[Raw CSV Data<br/>yield_df.csv]
+        A2[User Input<br/>JSON/Dict]
+    end
     
-    B1 --> B2["Generate Synthetic<br/>N, P, K, pH, Humidity"]
-    B2 --> C1["⚙️ Preprocessing<br/>Encode Categories"]
-    C1 --> C2["Scale Features<br/>StandardScaler"]
+    subgraph DataLoader["🔄 Data Loading Module<br/>(data_loader.py)"]
+        B1[Load Dataset]
+        B2[Generate Synthetic Features<br/>Humidity, N, P, K, pH]
+        B3[Validate Data]
+    end
     
-    C2 --> D1["🤖 Random Forest<br/>100 Trees"]
-    D1 --> D2["Ensemble<br/>Predictions"]
-    D1 --> D3["Feature<br/>Importance"]
+    subgraph Preprocessing["⚙️ Preprocessing Module<br/>(preprocessing.py)"]
+        C1[Categorical Encoding<br/>Area, Item]
+        C2[Feature Scaling<br/>StandardScaler]
+        C3[Feature Engineering]
+    end
     
-    D2 --> E1["🎓 Training<br/>80/20 Split"]
-    E1 --> E2["Cross-Validation<br/>5-Fold"]
-    E2 --> E3["Evaluation<br/>RMSE, R², MAE"]
-    E3 --> E4["💾 Save Models<br/>*.pkl files"]
+    subgraph Model["🤖 Model Layer<br/>(model.py)"]
+        D1[Random Forest Regressor<br/>100 trees, unlimited depth]
+        D2[Ensemble Predictions<br/>from all trees]
+        D3[Feature Importance<br/>Analysis]
+    end
     
-    E4 -.Trained Models.-> F2["Transform<br/>Features"]
+    subgraph Training["🎓 Training Pipeline<br/>(train.py)"]
+        E1[Train/Test Split<br/>80/20]
+        E2[5-Fold Cross-Validation]
+        E3[Model Evaluation<br/>RMSE, R², MAE]
+        E4[Save Model & Preprocessors<br/>models/*.pkl]
+    end
+    
+    subgraph Prediction["🔮 Prediction API<br/>(predict.py)"]
+        F1[Input Validation]
+        F2[Preprocessing Transform]
+        F3[Yield Prediction]
+        F4[Confidence Intervals<br/>95% CI from tree variance]
+    end
+    
+    subgraph Output["📤 Output Layer"]
+        G1[Predicted Yield<br/>hg/ha]
+        G2[Confidence Interval<br/>Lower/Upper bounds]
+        G3[Feature Importance<br/>Top drivers]
+    end
+    
+    A1 --> B1
+    A2 --> F1
+    B1 --> B2
+    B2 --> B3
+    B3 --> C1
+    C1 --> C2
+    C2 --> C3
+    C3 --> D1
+    D1 --> D2
+    D1 --> D3
+    D2 --> E1
+    E1 --> E2
+    E2 --> E3
+    E3 --> E4
+    E4 -.Saved Models.-> F2
     F1 --> F2
-    F2 --> F3["Predict<br/>Yield"]
-    F3 --> F4["Calculate CI<br/>95% Confidence"]
+    F2 --> F3
+    F3 --> F4
+    F4 --> G1
+    F4 --> G2
+    D3 --> G3
     
-    F4 --> G1["📤 Predicted Yield<br/>hg/ha"]
-    F4 --> G2["📤 Confidence Interval<br/>±σ bounds"]
-    D3 --> G3["📤 Feature Importance<br/>Top Drivers"]
-    
-    style A1 fill:#e1f5ff,stroke:#0288d1,stroke-width:2px
-    style A2 fill:#e1f5ff,stroke:#0288d1,stroke-width:2px
-    style B1 fill:#fff4e1,stroke:#f57c00,stroke-width:2px
-    style B2 fill:#fff4e1,stroke:#f57c00,stroke-width:2px
-    style C1 fill:#f0e1ff,stroke:#7b1fa2,stroke-width:2px
-    style C2 fill:#f0e1ff,stroke:#7b1fa2,stroke-width:2px
-    style D1 fill:#e1ffe1,stroke:#388e3c,stroke-width:2px
-    style D2 fill:#e1ffe1,stroke:#388e3c,stroke-width:2px
-    style D3 fill:#e1ffe1,stroke:#388e3c,stroke-width:2px
-    style E1 fill:#ffe1e1,stroke:#d32f2f,stroke-width:2px
-    style E2 fill:#ffe1e1,stroke:#d32f2f,stroke-width:2px
-    style E3 fill:#ffe1e1,stroke:#d32f2f,stroke-width:2px
-    style E4 fill:#ffe1e1,stroke:#d32f2f,stroke-width:2px
-    style F1 fill:#ffe1f5,stroke:#c2185b,stroke-width:2px
-    style F2 fill:#ffe1f5,stroke:#c2185b,stroke-width:2px
-    style F3 fill:#ffe1f5,stroke:#c2185b,stroke-width:2px
-    style F4 fill:#ffe1f5,stroke:#c2185b,stroke-width:2px
-    style G1 fill:#e1fff4,stroke:#00897b,stroke-width:2px
-    style G2 fill:#e1fff4,stroke:#00897b,stroke-width:2px
-    style G3 fill:#e1fff4,stroke:#00897b,stroke-width:2px
+    style Input fill:#e1f5ff
+    style DataLoader fill:#fff4e1
+    style Preprocessing fill:#f0e1ff
+    style Model fill:#e1ffe1
+    style Training fill:#ffe1e1
+    style Prediction fill:#ffe1f5
+    style Output fill:#e1fff4
 ```
 
 ### Key Components
