@@ -20,6 +20,11 @@ ENV/
 *~
 .DS_Store
 
+# Demo Documentation (keep local only)
+DEMO_GUIDE.md
+SIMPLE_DEMO_GUIDE.md
+DEMO_RESULTS.md
+
 # Jupyter Notebook
 .ipynb_checkpoints/
 *.ipynb
