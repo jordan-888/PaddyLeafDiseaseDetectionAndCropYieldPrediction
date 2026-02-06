@@ -13,6 +13,102 @@ A modular, production-ready machine learning system for predicting crop yields u
 ✅ **Feature Importance** - Identifies key yield drivers  
 ✅ **Production Ready** - Clean, documented, and tested code
 
+## Model Architecture
+
+The system follows a modular pipeline architecture with clear separation of concerns:
+
+```mermaid
+flowchart TB
+    subgraph Input["📥 Input Layer"]
+        A1[Raw CSV Data<br/>yield_df.csv]
+        A2[User Input<br/>JSON/Dict]
+    end
+    
+    subgraph DataLoader["🔄 Data Loading Module<br/>(data_loader.py)"]
+        B1[Load Dataset]
+        B2[Generate Synthetic Features<br/>Humidity, N, P, K, pH]
+        B3[Validate Data]
+    end
+    
+    subgraph Preprocessing["⚙️ Preprocessing Module<br/>(preprocessing.py)"]
+        C1[Categorical Encoding<br/>Area, Item]
+        C2[Feature Scaling<br/>StandardScaler]
+        C3[Feature Engineering]
+    end
+    
+    subgraph Model["🤖 Model Layer<br/>(model.py)"]
+        D1[Random Forest Regressor<br/>100 trees, unlimited depth]
+        D2[Ensemble Predictions<br/>from all trees]
+        D3[Feature Importance<br/>Analysis]
+    end
+    
+    subgraph Training["🎓 Training Pipeline<br/>(train.py)"]
+        E1[Train/Test Split<br/>80/20]
+        E2[5-Fold Cross-Validation]
+        E3[Model Evaluation<br/>RMSE, R², MAE]
+        E4[Save Model & Preprocessors<br/>models/*.pkl]
+    end
+    
+    subgraph Prediction["🔮 Prediction API<br/>(predict.py)"]
+        F1[Input Validation]
+        F2[Preprocessing Transform]
+        F3[Yield Prediction]
+        F4[Confidence Intervals<br/>95% CI from tree variance]
+    end
+    
+    subgraph Output["📤 Output Layer"]
+        G1[Predicted Yield<br/>hg/ha]
+        G2[Confidence Interval<br/>Lower/Upper bounds]
+        G3[Feature Importance<br/>Top drivers]
+    end
+    
+    A1 --> B1
+    A2 --> F1
+    B1 --> B2
+    B2 --> B3
+    B3 --> C1
+    C1 --> C2
+    C2 --> C3
+    C3 --> D1
+    D1 --> D2
+    D1 --> D3
+    D2 --> E1
+    E1 --> E2
+    E2 --> E3
+    E3 --> E4
+    E4 -.Saved Models.-> F2
+    F1 --> F2
+    F2 --> F3
+    F3 --> F4
+    F4 --> G1
+    F4 --> G2
+    D3 --> G3
+    
+    style Input fill:#e1f5ff
+    style DataLoader fill:#fff4e1
+    style Preprocessing fill:#f0e1ff
+    style Model fill:#e1ffe1
+    style Training fill:#ffe1e1
+    style Prediction fill:#ffe1f5
+    style Output fill:#e1fff4
+```
+
+### Key Components
+
+| Component | Purpose | Input | Output |
+|-----------|---------|-------|--------|
+| **Data Loader** | Load and augment data with synthetic features | CSV file | DataFrame with 11 features |
+| **Preprocessor** | Encode categorical variables and scale features | Raw features | Normalized feature matrix |
+| **Model** | Random Forest regression with confidence estimation | Feature matrix | Predictions + uncertainty |
+| **Training Pipeline** | Train, validate, and save model | Training data | Trained model files |
+| **Prediction API** | High-level interface for inference | User input dict | Prediction results |
+
+### Data Flow
+
+1. **Training Phase**: `CSV → Data Loader → Preprocessor → Model → Evaluation → Save`
+2. **Prediction Phase**: `User Input → Validation → Preprocessor → Model → Results`
+
+
 ## Project Structure
 
 ```
