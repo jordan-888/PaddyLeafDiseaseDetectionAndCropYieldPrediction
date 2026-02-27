@@ -1,90 +1,93 @@
-# Crop Yield Prediction Module
+# India Paddy Yield Prediction
 
-**AI-Based Paddy Leaf Disease Forecasting and Crop Yield Prediction for Precision Agriculture**
+**State-Wise Paddy Yield Forecasting Using Real Climatic, Soil, and Historical Features**
 
-A modular, production-ready machine learning system for predicting crop yields using Random Forest regression. Supports multiple crop types with environmental and soil features.
+A production-ready, research-grade machine learning pipeline for predicting rice yield across 20 Indian states. All features are real measured data — no synthetic generation.
+
+---
+
+## Overview
+
+| Property | Detail |
+|----------|--------|
+| **Crop** | Rice / Paddy |
+| **Region** | India — 20 States |
+| **Dataset** | Custom Crops Yield Historical Dataset (1966–2017) |
+| **Granularity** | State-Year |
+| **Best Model** | Random Forest Regressor |
+| **R²** | **0.9438** |
+| **RMSE** | **174.97 kg/ha** |
+| **Split Strategy** | Time-based (Train: 1968–2012 · Test: 2013–2017) |
+
+---
 
 ## Features
 
-✅ **Multi-Crop Support** - Predicts yields for Rice, Maize, Wheat, Potatoes, and more  
-✅ **Synthetic Chennai Data** - Includes soil nutrients (N, P, K), pH, and humidity  
-✅ **Modular Architecture** - Easy to extend and replace models  
-✅ **Confidence Intervals** - Provides prediction uncertainty estimates  
-✅ **Feature Importance** - Identifies key yield drivers  
-✅ **Production Ready** - Clean, documented, and tested code
+✅ **Real soil data** — N, P, K, pH (no synthetic generation)  
+✅ **Real weather data** — Temperature, Rainfall, Humidity, Wind Speed, Solar Radiation  
+✅ **Time-aware modelling** — Lag features (Yield_t1, Yield_t2, Rainfall_t1, Rainfall_t2, Temp_t1)  
+✅ **No data leakage** — Strict time-based train/test split  
+✅ **Model comparison** — Random Forest vs XGBoost  
+✅ **Research notebook** — 12-section academic Jupyter notebook included  
+
+---
 
 ## Model Architecture
-
-The system follows a modular pipeline architecture with clear separation of concerns:
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': { 'fontSize':'14px'}}}%%
 flowchart TD
     subgraph Input["📥 Input Layer"]
-        A1[Raw CSV Data<br/>yield_df.csv]
-        A2[User Input<br/>JSON/Dict]
+        A1[Real CSV Data<br/>Custom_Crops_yield_Historical_Dataset.csv]
+        A2[User Input<br/>State + Year + Weather + Soil]
     end
-    
+
     subgraph DataLoader["🔄 Data Loading Module<br/>(data_loader.py)"]
         B1[Load Dataset]
-        B2[Generate Synthetic Features<br/>Humidity, N, P, K, pH]
-        B3[Validate Data]
+        B2[Filter: Crop == rice]
+        B3[Aggregate District → State<br/>Area-weighted yield]
     end
-    
+
     subgraph Preprocessing["⚙️ Preprocessing Module<br/>(preprocessing.py)"]
-        C1[Categorical Encoding<br/>Area, Item]
-        C2[Feature Scaling<br/>StandardScaler]
-        C3[Feature Engineering]
+        C1[LabelEncoder — State]
+        C2[StandardScaler — Numerics]
+        C3[Lag Feature Engineering<br/>Yield_t1, t2 · Rainfall_t1, t2 · Temp_t1]
     end
-    
+
     subgraph Model["🤖 Model Layer<br/>(model.py)"]
-        D1[Random Forest Regressor<br/>100 trees, unlimited depth]
-        D2[Ensemble Predictions<br/>from all trees]
-        D3[Feature Importance<br/>Analysis]
+        D1[Random Forest · 200 trees]
+        D2[XGBoost · lr=0.05 · depth=6]
+        D3[Feature Importance + SHAP]
     end
-    
+
     subgraph Training["🎓 Training Pipeline<br/>(train.py)"]
-        E1[Train/Test Split<br/>80/20]
-        E2[5-Fold Cross-Validation]
-        E3[Model Evaluation<br/>RMSE, R², MAE]
-        E4[Save Model & Preprocessors<br/>models/*.pkl]
+        E1[Time-Based Split<br/>Train: 1968–2012 · Test: 2013–2017]
+        E2[Model Comparison<br/>model_comparison.py]
+        E3[Save Best Model → models/]
     end
-    
+
     subgraph Prediction["🔮 Prediction API<br/>(predict.py)"]
         F1[Input Validation]
-        F2[Preprocessing Transform]
-        F3[Yield Prediction]
-        F4[Confidence Intervals<br/>95% CI from tree variance]
+        F2[Preprocess + Predict]
+        F3[Confidence Interval<br/>95% CI from tree variance]
     end
-    
-    subgraph Output["📤 Output Layer"]
-        G1[Predicted Yield<br/>hg/ha]
-        G2[Confidence Interval<br/>Lower/Upper bounds]
-        G3[Feature Importance<br/>Top drivers]
+
+    subgraph Output["📤 Output"]
+        G1[Predicted Yield — kg/ha]
+        G2[±Confidence Interval]
+        G3[Feature Importance<br/>reports/]
     end
-    
-    A1 --> B1
-    A2 --> F1
-    B1 --> B2
-    B2 --> B3
-    B3 --> C1
-    C1 --> C2
-    C2 --> C3
-    C3 --> D1
-    D1 --> D2
+
+    A1 --> B1 --> B2 --> B3 --> C1 --> C2 --> C3 --> D1
+    C3 --> D2
     D1 --> D3
+    D2 --> D3
+    D1 --> E1 --> E2 --> E3
     D2 --> E1
-    E1 --> E2
-    E2 --> E3
-    E3 --> E4
-    E4 -.Saved Models.-> F2
-    F1 --> F2
-    F2 --> F3
-    F3 --> F4
-    F4 --> G1
-    F4 --> G2
+    E3 -.Saved Model.-> F2
+    A2 --> F1 --> F2 --> F3 --> G1 --> G2
     D3 --> G3
-    
+
     style Input fill:#e1f5ff
     style DataLoader fill:#fff4e1
     style Preprocessing fill:#f0e1ff
@@ -94,234 +97,144 @@ flowchart TD
     style Output fill:#e1fff4
 ```
 
-### Key Components
+---
 
-| Component | Purpose | Input | Output |
-|-----------|---------|-------|--------|
-| **Data Loader** | Load and augment data with synthetic features | CSV file | DataFrame with 11 features |
-| **Preprocessor** | Encode categorical variables and scale features | Raw features | Normalized feature matrix |
-| **Model** | Random Forest regression with confidence estimation | Feature matrix | Predictions + uncertainty |
-| **Training Pipeline** | Train, validate, and save model | Training data | Trained model files |
-| **Prediction API** | High-level interface for inference | User input dict | Prediction results |
+## Model Comparison
 
-### Data Flow
+| Model | RMSE (kg/ha) | MAE (kg/ha) | R² | MAPE (%) |
+|-------|:---:|:---:|:---:|:---:|
+| **Random Forest** ✅ | **174.97** | 128.38 | **0.9438** | 5.35 |
+| XGBoost | 182.33 | **124.88** | 0.9390 | **5.05** |
 
-1. **Training Phase**: `CSV → Data Loader → Preprocessor → Model → Evaluation → Save`
-2. **Prediction Phase**: `User Input → Validation → Preprocessor → Model → Results`
+> **Best model: Random Forest** — higher R² and lower RMSE on the unseen 2013–2017 test set.  
+> Both models trained with time-based split only — no random shuffling, no data leakage.
 
+---
+
+## Feature Set (Real Data Only)
+
+| Feature | Type | Source |
+|---------|------|--------|
+| `State` | Categorical | Dataset |
+| `Year` | Numeric | Dataset |
+| `Rainfall_mm` | Real | Dataset |
+| `Temperature_C` | Real | Dataset |
+| `Humidity_%` | Real | Dataset |
+| `N_req_kg_per_ha` | Real ✅ | Dataset (replaces synthetic) |
+| `P_req_kg_per_ha` | Real ✅ | Dataset (replaces synthetic) |
+| `K_req_kg_per_ha` | Real ✅ | Dataset (replaces synthetic) |
+| `pH` | Real ✅ | Dataset (replaces synthetic) |
+| `Wind_Speed_m_s` | Real | Dataset |
+| `Solar_Radiation_MJ_m2_day` | Real | Dataset |
+| `Yield_t1` | Lag | Engineered |
+| `Yield_t2` | Lag | Engineered |
+| `Rainfall_t1` | Lag | Engineered |
+| `Rainfall_t2` | Lag | Engineered |
+| `Temp_t1` | Lag | Engineered |
+
+**Target:** `Yield_kg_per_ha`
+
+---
 
 ## Project Structure
 
 ```
 crop_yield_prediction/
 ├── src/
-│   ├── __init__.py
-│   ├── config.py          # Configuration and synthetic data
-│   ├── data_loader.py     # Data loading with synthetic features
-│   ├── preprocessing.py   # Feature engineering and scaling
-│   ├── model.py           # Random Forest model wrapper
-│   ├── train.py           # Training pipeline
-│   ├── predict.py         # Prediction API
-│   └── utils.py           # Helper functions
-├── models/                # Saved trained models
-├── data/                  # Dataset files
-└── requirements.txt       # Python dependencies
+│   ├── config.py              # Paths, features, model params
+│   ├── data_loader.py         # Load, filter, aggregate, lag features
+│   ├── preprocessing.py       # Encode + scale
+│   ├── model.py               # RF + XGBoost wrapper
+│   ├── model_comparison.py    # Time-split + comparison table
+│   ├── train.py               # Full training pipeline
+│   ├── reporting.py           # Feature importance, plots, SHAP
+│   └── predict.py             # Prediction API
+├── data/
+│   └── india_paddy_clean.csv  # 995 rows · 20 states · 1968–2017
+├── models/
+│   ├── yield_model.pkl        # Trained RF model (via Git LFS)
+│   └── preprocessor.pkl       # Fitted encoders + scaler
+├── reports/
+│   ├── feature_importance.png
+│   ├── predictions_vs_actual.png
+│   └── residuals.png
+├── India_Paddy_Yield_Research_Notebook.ipynb   # 12-section research notebook
+├── train_standalone.py        # Entry point
+└── requirements.txt
 ```
+
+---
 
 ## Installation
 
 ```bash
-# Navigate to project directory
 cd crop_yield_prediction
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-## Quick Start
-
-### 1. Train the Model
+## Train
 
 ```bash
-# Train on all crops
-python -m src.train
+# First time — builds clean dataset from archive
+python3 train_standalone.py --rebuild
 
-# Train on specific crops only
-python -m src.train --crops "Rice, paddy" Maize Wheat
-
-# Train without cross-validation (faster)
-python -m src.train --no-cv
+# Subsequent runs (uses cached clean data)
+python3 train_standalone.py
 ```
 
-### 2. Make Predictions
+## Predict
 
 ```python
 from src.predict import predict_yield, print_prediction_result
 
-# Example: Predict rice yield in India
-input_features = {
-    'Area': 'India',
-    'Item': 'Rice, paddy',
-    'Year': 2024,
-    'average_rain_fall_mm_per_year': 1200.0,
-    'pesticides_tonnes': 150.0,
-    'avg_temp': 28.5,
-    'humidity': 75.0,
-    'nitrogen': 280.0,
-    'phosphorus': 45.0,
-    'potassium': 220.0,
-    'ph': 6.5
-}
-
-result = predict_yield(input_features)
+result = predict_yield({
+    'State':                     'Tamil Nadu',
+    'Year':                      2015,
+    'Rainfall_mm':               1200.0,
+    'Temperature_C':             28.0,
+    'Humidity_%':                78.0,
+    'N_req_kg_per_ha':           8.5,
+    'P_req_kg_per_ha':           4.0,
+    'K_req_kg_per_ha':           7.0,
+    'pH':                        6.5,
+    'Wind_Speed_m_s':            2.0,
+    'Solar_Radiation_MJ_m2_day': 18.0,
+    'Yield_t1':                  2400.0,   # Previous year yield
+    'Yield_t2':                  2200.0,   # Two years prior
+    'Rainfall_t1':               1100.0,
+    'Rainfall_t2':               1050.0,
+    'Temp_t1':                   27.5,
+})
 print_prediction_result(result)
 ```
 
-**Output:**
-```
-CROP YIELD PREDICTION RESULT
-============================================================
-Input Features:
-  Area                          : India
-  Item                          : Rice, paddy
-  Year                          : 2024
-  ...
+---
 
-Predicted Yield:
-  45,234.56 hg/ha
+## Research Notebook
 
-95% Confidence Interval:
-  [42,100.23, 48,368.89] hg/ha
-  ± 1,567.33 hg/ha
-============================================================
-```
+`India_Paddy_Yield_Research_Notebook.ipynb` is a complete, academically structured study with 12 sections:
 
-### 3. Using the API
+1. Introduction — Problem, objectives, research questions
+2. Dataset Inspection — Summary table of all source CSVs
+3. Data Filtering & Cleaning — Rice filter, aggregation, null removal
+4. Target Variable — Distribution, boxplot, temporal trend
+5. Feature Engineering — Lag features with agronomic rationale
+6. Exploratory Data Analysis — Heatmap, scatter plots, state trends
+7. Train-Test Split — Time-based split rationale
+8. Model Training — RF + XGBoost with documented hyperparameters
+9. Model Evaluation — Comparison table, Predicted vs Actual, Residuals
+10. Feature Importance & SHAP — Explainability analysis
+11. Discussion — Rainfall impact, lag features, limitations
+12. Conclusion — Policy relevance, future directions
 
-```python
-from src.predict import YieldPredictionAPI
-
-# Initialize API
-api = YieldPredictionAPI()
-api.load_model()
-
-# Single prediction
-result = api.predict_yield(input_features)
-
-# Batch predictions
-results = api.predict_batch([input1, input2, input3])
-```
-
-## Input Features
-
-| Feature | Type | Description | Example |
-|---------|------|-------------|---------|
-| `Area` | str | Country/Region | 'India', 'China', 'United States' |
-| `Item` | str | Crop type | 'Rice, paddy', 'Maize', 'Wheat' |
-| `Year` | int | Harvest year | 2024 |
-| `average_rain_fall_mm_per_year` | float | Annual rainfall (mm) | 1200.0 |
-| `pesticides_tonnes` | float | Pesticide usage (tonnes) | 150.0 |
-| `avg_temp` | float | Average temperature (°C) | 28.5 |
-| `humidity` | float | Humidity (%) | 75.0 |
-| `nitrogen` | float | Soil nitrogen (kg/ha) | 280.0 |
-| `phosphorus` | float | Soil phosphorus (kg/ha) | 45.0 |
-| `potassium` | float | Soil potassium (kg/ha) | 220.0 |
-| `ph` | float | Soil pH | 6.5 |
-
-## Model Performance
-
-The Random Forest model is evaluated using:
-- **RMSE** (Root Mean Squared Error) - Lower is better
-- **R²** (Coefficient of Determination) - Closer to 1 is better
-- **MAE** (Mean Absolute Error) - Lower is better
-- **5-Fold Cross-Validation** - For robust performance estimation
-
-## Chennai Synthetic Data
-
-Since soil nutrients and humidity data are not in the original dataset, we generate synthetic values based on typical Chennai/Tamil Nadu agricultural conditions:
-
-| Feature | Mean | Std Dev | Range |
-|---------|------|---------|-------|
-| Humidity (%) | 75.0 | 8.0 | 60-90 |
-| Nitrogen (kg/ha) | 280.0 | 50.0 | 200-400 |
-| Phosphorus (kg/ha) | 45.0 | 15.0 | 20-80 |
-| Potassium (kg/ha) | 220.0 | 40.0 | 150-300 |
-| pH | 6.5 | 0.5 | 5.5-7.5 |
-
-## Replacing the Model
-
-The modular design allows easy model replacement:
-
-```python
-# In model.py, replace RandomForestRegressor with:
-
-# XGBoost
-from xgboost import XGBRegressor
-self.model = XGBRegressor(n_estimators=100, learning_rate=0.1)
-
-# Gradient Boosting
-from sklearn.ensemble import GradientBoostingRegressor
-self.model = GradientBoostingRegressor(n_estimators=100)
-
-# LightGBM
-from lightgbm import LGBMRegressor
-self.model = LGBMRegressor(n_estimators=100)
-```
-
-## Feature Importance
-
-After training, view feature importance to understand yield drivers:
-
-```python
-from src.model import YieldPredictor
-
-predictor = YieldPredictor.load_model()
-predictor.print_feature_importance(top_n=10)
-```
-
-## Utilities
-
-```python
-from src.utils import (
-    convert_hg_to_tonnes,
-    plot_feature_importance,
-    plot_predictions_vs_actual,
-    generate_prediction_report
-)
-
-# Convert units
-tonnes = convert_hg_to_tonnes(50000)  # 5.0 tonnes/ha
-
-# Generate batch prediction report
-report_df = generate_prediction_report(results, 'predictions.csv')
-```
-
-## Dataset
-
-The model is trained on `yield_df.csv` containing:
-- **28,244 records** across multiple countries and years (1990-2013)
-- **8 crop types**: Maize, Potatoes, Rice (paddy), Wheat, Sorghum, Soybeans, Cassava, Sweet potatoes
-- **Environmental features**: Rainfall, temperature, pesticide usage
-- **Synthetic features**: Humidity, soil nutrients (N, P, K), pH
-
-## Requirements
-
-- Python 3.8+
-- pandas >= 1.5.0
-- numpy >= 1.23.0
-- scikit-learn >= 1.2.0
-- joblib >= 1.2.0
-- matplotlib >= 3.6.0
-- seaborn >= 0.12.0
-
-## License
-
-This project is part of the "AI-Based Paddy Leaf Disease Forecasting and Crop Yield Prediction for Precision Agriculture" system.
-
-## Authors
-
-Crop Yield Prediction Team
+> Suitable as a research paper basis or academic presentation.
 
 ---
 
-**Note:** This module is designed to integrate with a CNN-based paddy leaf disease detection system. The prediction API can accept disease severity scores as optional features in future versions.
+## Supported States
+
+Andhra Pradesh · Assam · Bihar · Chhattisgarh · Gujarat · Haryana · Himachal Pradesh · Jharkhand · Karnataka · Kerala · Madhya Pradesh · Maharashtra · Orissa · Punjab · Rajasthan · Tamil Nadu · Telangana · Uttar Pradesh · Uttarakhand · West Bengal
+
+---
+
+*Part of the AI-Based Paddy Leaf Disease Forecasting and Crop Yield Prediction for Precision Agriculture project.*
