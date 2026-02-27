@@ -63,7 +63,6 @@ coverage.xml
 .pytest_cache/
 
 # Data files (large datasets)
-data/
 archive/
 *.csv
 *.xlsx
@@ -88,3 +87,4 @@ logs/
 *.swp
 temp/
 tmp/
+reports/
