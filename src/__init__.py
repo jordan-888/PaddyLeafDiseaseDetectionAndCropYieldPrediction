@@ -1,7 +1,8 @@
 """
-Crop Yield Prediction Module
-AI-Based Paddy Leaf Disease Forecasting and Crop Yield Prediction for Precision Agriculture
+Crop Yield Prediction — India Paddy (Real Data)
 """
-
-__version__ = "1.0.0"
-__author__ = "Crop Yield Prediction Team"
+from .config import *
+from .data_loader import load_clean_data, load_and_prepare
+from .preprocessing import DataPreprocessor
+from .model import YieldPredictor
+from .predict import YieldPredictionAPI, predict_yield, print_prediction_result
