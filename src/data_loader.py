@@ -1,172 +1,151 @@
 """
-Data Loading Module
-Loads crop yield data and adds synthetic features for Chennai region
+Data Loader — India Paddy Yield (Real Data)
+Loads Custom_Crops_yield_Historical_Dataset.csv, filters rice,
+aggregates district → state, engineers lag features.
+No synthetic generation whatsoever.
 """
 
 import pandas as pd
 import numpy as np
-from typing import Optional
+import os
 from .config import (
-    DATA_PATH, 
-    CHENNAI_SYNTHETIC_DATA, 
-    SUPPORTED_CROPS,
-    TARGET
+    RAW_DATA_PATH, CLEAN_DATA_PATH, TARGET_CROP,
+    TARGET_COLUMN, DATA_DIR
 )
 
 
-def load_yield_data(
-    filepath: str = DATA_PATH,
-    crop_filter: Optional[list] = None,
-    add_synthetic: bool = True
-) -> pd.DataFrame:
-    """
-    Load crop yield dataset and optionally add synthetic features.
-    
-    Args:
-        filepath: Path to yield_df.csv
-        crop_filter: List of crop names to filter (None = all crops)
-        add_synthetic: Whether to add synthetic Chennai data
-        
-    Returns:
-        pd.DataFrame: Cleaned dataset with synthetic features
-    """
-    print(f"Loading data from: {filepath}")
-    df = pd.read_csv(filepath)
-    
-    # Drop unnamed index column if present
-    if 'Unnamed: 0' in df.columns:
-        df = df.drop('Unnamed: 0', axis=1)
-    
-    print(f"Loaded {len(df)} records")
-    print(f"Columns: {df.columns.tolist()}")
-    
-    # Filter by crop type if specified
-    if crop_filter:
-        df = df[df['Item'].isin(crop_filter)]
-        print(f"Filtered to {len(df)} records for crops: {crop_filter}")
-    
-    # Handle missing values
-    print("\nHandling missing values...")
-    print(f"Missing values before:\n{df.isnull().sum()}")
-    
-    # Drop rows with missing target variable
-    df = df.dropna(subset=[TARGET])
-    
-    # Fill missing numerical values with median
-    numerical_cols = df.select_dtypes(include=[np.number]).columns
-    for col in numerical_cols:
-        if df[col].isnull().any():
-            median_val = df[col].median()
-            df[col].fillna(median_val, inplace=True)
-            print(f"  Filled {col} with median: {median_val:.2f}")
-    
-    print(f"\nDataset after cleaning: {len(df)} records")
-    
-    # Add synthetic features
-    if add_synthetic:
-        df = add_synthetic_features(df)
-    
+# ---------------------------------------------------------------------------
+# Column mapping: raw → standardised
+# ---------------------------------------------------------------------------
+COLUMN_MAP = {
+    'State Name':                 'State',
+    'Year':                       'Year',
+    'Area_ha':                    'Area_ha',
+    'Yield_kg_per_ha':            'Yield_kg_per_ha',
+    'N_req_kg_per_ha':            'N_req_kg_per_ha',
+    'P_req_kg_per_ha':            'P_req_kg_per_ha',
+    'K_req_kg_per_ha':            'K_req_kg_per_ha',
+    'Temperature_C':              'Temperature_C',
+    'Humidity_%':                 'Humidity_%',
+    'pH':                         'pH',
+    'Rainfall_mm':                'Rainfall_mm',
+    'Wind_Speed_m_s':             'Wind_Speed_m_s',
+    'Solar_Radiation_MJ_m2_day':  'Solar_Radiation_MJ_m2_day',
+}
+
+
+def load_raw_data(path: str = RAW_DATA_PATH) -> pd.DataFrame:
+    """Load and basic-filter the raw dataset."""
+    print(f"Loading raw data from: {path}")
+    df = pd.read_csv(path)
+    print(f"  Raw shape: {df.shape}")
+
+    # Filter to rice only
+    df = df[df['Crop'].str.lower() == TARGET_CROP].copy()
+    print(f"  After rice filter: {df.shape}")
     return df
 
 
-def add_synthetic_features(df: pd.DataFrame) -> pd.DataFrame:
+def aggregate_to_state(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Add synthetic features for Chennai region (humidity, soil nutrients, pH).
-    
-    Uses normal distribution with parameters from CHENNAI_SYNTHETIC_DATA.
-    
-    Args:
-        df: Input DataFrame
-        
-    Returns:
-        pd.DataFrame: DataFrame with added synthetic features
+    Aggregate district-level rows → state-year level.
+    Uses Area_ha as weight for yield; mean for other numeric features.
     """
-    print("\nAdding synthetic Chennai features...")
-    np.random.seed(42)  # For reproducibility
-    
-    n_samples = len(df)
-    
-    for feature, params in CHENNAI_SYNTHETIC_DATA.items():
-        # Generate values from normal distribution
-        values = np.random.normal(
-            loc=params['mean'],
-            scale=params['std'],
-            size=n_samples
-        )
-        
-        # Clip to valid range
-        values = np.clip(values, params['min'], params['max'])
-        
-        df[feature] = values
-        print(f"  Added {feature}: mean={values.mean():.2f}, "
-              f"std={values.std():.2f}, range=[{values.min():.2f}, {values.max():.2f}]")
-    
-    return df
+    print("Aggregating district → state level...")
+
+    # Weighted yield (area-weighted average)
+    df['_weighted_yield'] = df['Yield_kg_per_ha'] * df['Area_ha']
+    df['_total_area']     = df['Area_ha']
+
+    numeric_cols = [
+        'N_req_kg_per_ha', 'P_req_kg_per_ha', 'K_req_kg_per_ha',
+        'Temperature_C', 'Humidity_%', 'pH', 'Rainfall_mm',
+        'Wind_Speed_m_s', 'Solar_Radiation_MJ_m2_day',
+        '_weighted_yield', '_total_area'
+    ]
+
+    agg_dict = {c: 'mean' for c in numeric_cols}
+    agg_dict['_weighted_yield'] = 'sum'
+    agg_dict['_total_area']     = 'sum'
+
+    state_df = df.groupby(['State Name', 'Year']).agg(agg_dict).reset_index()
+
+    # Recover area-weighted yield
+    state_df['Yield_kg_per_ha'] = (
+        state_df['_weighted_yield'] / state_df['_total_area']
+    )
+    state_df.drop(columns=['_weighted_yield', '_total_area'], inplace=True)
+    state_df.rename(columns={'State Name': 'State'}, inplace=True)
+
+    print(f"  After aggregation: {state_df.shape}")
+    return state_df
 
 
-def get_dataset_info(df: pd.DataFrame) -> dict:
+def add_lag_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Get summary information about the dataset.
-    
-    Args:
-        df: Input DataFrame
-        
-    Returns:
-        dict: Dataset statistics
+    Add time-aware lag features, sorted by State → Year.
+    Lags: Yield_t1, Yield_t2, Rainfall_t1, Rainfall_t2, Temp_t1
+    Rows lacking sufficient history are dropped.
     """
-    info = {
-        'total_records': len(df),
-        'num_features': len(df.columns) - 1,  # Excluding target
-        'crops': df['Item'].unique().tolist(),
-        'num_crops': df['Item'].nunique(),
-        'areas': df['Area'].unique().tolist(),
-        'num_areas': df['Area'].nunique(),
-        'year_range': (df['Year'].min(), df['Year'].max()),
-        'target_stats': {
-            'mean': df[TARGET].mean(),
-            'std': df[TARGET].std(),
-            'min': df[TARGET].min(),
-            'max': df[TARGET].max()
-        }
-    }
-    
-    return info
+    print("Engineering lag features...")
+    df = df.sort_values(['State', 'Year']).copy()
+
+    grp = df.groupby('State')
+    df['Yield_t1']    = grp['Yield_kg_per_ha'].shift(1)
+    df['Yield_t2']    = grp['Yield_kg_per_ha'].shift(2)
+    df['Rainfall_t1'] = grp['Rainfall_mm'].shift(1)
+    df['Rainfall_t2'] = grp['Rainfall_mm'].shift(2)
+    df['Temp_t1']     = grp['Temperature_C'].shift(1)
+
+    before = len(df)
+    df.dropna(subset=['Yield_t1', 'Yield_t2', 'Rainfall_t1',
+                      'Rainfall_t2', 'Temp_t1'], inplace=True)
+    print(f"  Dropped {before - len(df)} rows lacking lag history")
+    print(f"  Final shape: {df.shape}")
+    return df.reset_index(drop=True)
 
 
-def print_dataset_summary(df: pd.DataFrame):
+def load_and_prepare(save: bool = True) -> pd.DataFrame:
     """
-    Print a formatted summary of the dataset.
-    
-    Args:
-        df: Input DataFrame
+    Full pipeline:
+      raw CSV → filter rice → aggregate state → lag features → save
+    Returns clean DataFrame ready for model training.
     """
-    info = get_dataset_info(df)
-    
-    print("\n" + "="*60)
-    print("DATASET SUMMARY")
-    print("="*60)
-    print(f"Total Records: {info['total_records']:,}")
-    print(f"Number of Features: {info['num_features']}")
-    print(f"Number of Crops: {info['num_crops']}")
-    print(f"Number of Areas: {info['num_areas']}")
-    print(f"Year Range: {info['year_range'][0]} - {info['year_range'][1]}")
-    print(f"\nTarget Variable ({TARGET}):")
-    print(f"  Mean: {info['target_stats']['mean']:,.2f} hg/ha")
-    print(f"  Std:  {info['target_stats']['std']:,.2f} hg/ha")
-    print(f"  Min:  {info['target_stats']['min']:,.2f} hg/ha")
-    print(f"  Max:  {info['target_stats']['max']:,.2f} hg/ha")
-    print(f"\nSupported Crops ({info['num_crops']}):")
-    for crop in sorted(info['crops']):
-        count = len(df[df['Item'] == crop])
-        print(f"  - {crop}: {count:,} records")
-    print("="*60 + "\n")
+    raw = load_raw_data()
+    state_df = aggregate_to_state(raw)
+    clean_df  = add_lag_features(state_df)
+
+    # Enforce numeric types
+    numeric_cols = [c for c in clean_df.columns if c != 'State']
+    clean_df[numeric_cols] = clean_df[numeric_cols].apply(
+        pd.to_numeric, errors='coerce'
+    )
+    clean_df.dropna(inplace=True)
+
+    print(f"\nFinal dataset: {clean_df.shape}")
+    print(f"States: {sorted(clean_df['State'].unique())}")
+    print(f"Year: {clean_df['Year'].min()} – {clean_df['Year'].max()}")
+    print(f"Yield range: {clean_df['Yield_kg_per_ha'].min():.1f} – "
+          f"{clean_df['Yield_kg_per_ha'].max():.1f} kg/ha")
+
+    if save:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        clean_df.to_csv(CLEAN_DATA_PATH, index=False)
+        print(f"\nSaved clean dataset → {CLEAN_DATA_PATH}")
+
+    return clean_df
 
 
-if __name__ == "__main__":
-    # Test the data loader
-    df = load_yield_data()
-    print_dataset_summary(df)
-    print("\nFirst few rows:")
+def load_clean_data() -> pd.DataFrame:
+    """Load the pre-processed clean dataset (must run load_and_prepare first)."""
+    if not os.path.exists(CLEAN_DATA_PATH):
+        print("Clean dataset not found — running preparation pipeline...")
+        return load_and_prepare()
+    print(f"Loading clean dataset from: {CLEAN_DATA_PATH}")
+    return pd.read_csv(CLEAN_DATA_PATH)
+
+
+if __name__ == '__main__':
+    df = load_and_prepare()
     print(df.head())
-    print("\nData types:")
     print(df.dtypes)
