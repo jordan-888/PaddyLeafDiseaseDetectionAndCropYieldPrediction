@@ -1,124 +1,77 @@
 """
-Training Pipeline
-Complete workflow for training the crop yield prediction model
+Training Pipeline — India Paddy Yield (Time-Aware, Real Data)
+Loads clean data, time-splits, compares RF vs XGBoost,
+saves best model + preprocessor, generates reports.
 """
 
-import os
-import sys
-from .data_loader import load_yield_data, print_dataset_summary
-from .preprocessing import DataPreprocessor, split_data
-from .model import YieldPredictor
-from .config import MODEL_DIR
+import numpy as np
+import pandas as pd
+from .data_loader import load_clean_data, load_and_prepare
+from .preprocessing import DataPreprocessor
+from .model_comparison import compare_models, time_split
+from .reporting import generate_all_reports
+from .config import (
+    TARGET_COLUMN, ALL_FEATURES, MODEL_PATH, PREPROCESSOR_PATH
+)
 
 
-def train_model(
-    crop_filter: list = None,
-    save_model: bool = True,
-    perform_cv: bool = True
-):
+def train_pipeline(force_rebuild: bool = False) -> dict:
     """
-    Complete training pipeline for crop yield prediction.
-    
-    Args:
-        crop_filter: List of crops to include (None = all crops)
-        save_model: Whether to save the trained model
-        perform_cv: Whether to perform cross-validation
-        
-    Returns:
-        Tuple of (predictor, preprocessor, metrics)
+    Full training pipeline:
+      1. Load (or build) clean data
+      2. Time-based split
+      3. Fit preprocessor on train only
+      4. Compare RF vs XGBoost
+      5. Save best model + preprocessor
+      6. Generate reports
+    Returns metrics dict.
     """
-    print("\n" + "="*70)
-    print(" "*15 + "CROP YIELD PREDICTION - TRAINING PIPELINE")
-    print("="*70)
-    
-    # Step 1: Load data
-    print("\n[1/5] Loading dataset...")
-    df = load_yield_data(crop_filter=crop_filter, add_synthetic=True)
-    print_dataset_summary(df)
-    
-    # Step 2: Preprocess data
-    print("\n[2/5] Preprocessing data...")
+    print("\n" + "="*60)
+    print("  INDIA PADDY YIELD — TRAINING PIPELINE")
+    print("="*60)
+
+    # Step 1 — data
+    df = load_and_prepare() if force_rebuild else load_clean_data()
+
+    # Step 2 — time split
+    train_df, test_df = time_split(df, TARGET_COLUMN)
+
+    # Step 3 — preprocessor (fit on train ONLY — no leakage)
     preprocessor = DataPreprocessor()
-    X, y = preprocessor.fit_transform(df)
-    X_train, X_test, y_train, y_test = split_data(X, y)
-    
-    # Step 3: Train model
-    print("\n[3/5] Training Random Forest model...")
-    predictor = YieldPredictor()
-    predictor.train(X_train, y_train, feature_names=preprocessor.feature_names)
-    
-    # Step 4: Evaluate model
-    print("\n[4/5] Evaluating model...")
-    metrics = predictor.evaluate(X_test, y_test)
-    
-    # Cross-validation
-    if perform_cv:
-        cv_metrics = predictor.cross_validate(X, y)
-        metrics.update(cv_metrics)
-    
-    # Feature importance
-    predictor.print_feature_importance(top_n=15)
-    
-    # Step 5: Save model
-    if save_model:
-        print("\n[5/5] Saving model and preprocessors...")
-        
-        # Create models directory if it doesn't exist
-        os.makedirs(MODEL_DIR, exist_ok=True)
-        
-        predictor.save_model()
-        preprocessor.save()
-        
-        print("\nModel training complete!")
-    
-    print("\n" + "="*70)
-    print(" "*20 + "TRAINING PIPELINE COMPLETE")
-    print("="*70 + "\n")
-    
-    return predictor, preprocessor, metrics
+    X_train = preprocessor.fit_transform(train_df)
+    y_train = preprocessor.get_target(train_df)
+    X_test  = preprocessor.transform(test_df)
+    y_test  = preprocessor.get_target(test_df)
+
+    print(f"\nX_train: {X_train.shape}  y_train: {y_train.shape}")
+    print(f"X_test : {X_test.shape}   y_test : {y_test.shape}")
+
+    # Step 4 — model comparison
+    best_name, best_model, all_metrics = compare_models(
+        X_train, y_train, X_test, y_test,
+        feature_names=ALL_FEATURES
+    )
+
+    # Step 5 — save
+    best_model.save(MODEL_PATH)
+    preprocessor.save(PREPROCESSOR_PATH)
+
+    # Step 6 — reports
+    generate_all_reports(best_model, X_test, y_test,
+                         feature_names=ALL_FEATURES)
+
+    print("\n" + "="*60)
+    print("  PIPELINE COMPLETE")
+    print(f"  Best model : {best_name.replace('_',' ').title()}")
+    m = all_metrics[best_name]
+    print(f"  RMSE       : {m['rmse']:,.2f} kg/ha")
+    print(f"  MAE        : {m['mae']:,.2f} kg/ha")
+    print(f"  R²         : {m['r2']:.4f}")
+    print(f"  MAPE       : {m['mape']:.2f}%")
+    print("="*60 + "\n")
+
+    return {'best_model': best_name, 'metrics': all_metrics}
 
 
-def main():
-    """
-    Main entry point for training script.
-    """
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Train Crop Yield Prediction Model')
-    parser.add_argument(
-        '--crops',
-        nargs='+',
-        default=None,
-        help='List of crops to include (default: all crops)'
-    )
-    parser.add_argument(
-        '--no-save',
-        action='store_true',
-        help='Do not save the trained model'
-    )
-    parser.add_argument(
-        '--no-cv',
-        action='store_true',
-        help='Skip cross-validation'
-    )
-    
-    args = parser.parse_args()
-    
-    # Train model
-    predictor, preprocessor, metrics = train_model(
-        crop_filter=args.crops,
-        save_model=not args.no_save,
-        perform_cv=not args.no_cv
-    )
-    
-    # Print final summary
-    print("\nFinal Model Performance:")
-    print(f"  Test RMSE: {metrics['rmse']:,.2f} hg/ha")
-    print(f"  Test R²:   {metrics['r2']:.4f}")
-    if 'cv_rmse_mean' in metrics:
-        print(f"  CV RMSE:   {metrics['cv_rmse_mean']:,.2f} ± {metrics['cv_rmse_std']:,.2f}")
-        print(f"  CV R²:     {metrics['cv_r2_mean']:.4f} ± {metrics['cv_r2_std']:.4f}")
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    train_pipeline()
