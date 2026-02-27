@@ -27,7 +27,6 @@ DEMO_RESULTS.md
 
 # Jupyter Notebook
 .ipynb_checkpoints/
-*.ipynb
 
 # Distribution / packaging
 build/
